@@ -1,75 +1,147 @@
+'use strict';
+
 import React, {Component} from 'react';
 import {
-	StyleSheet,
-	Text,
 	View,
+	StyleSheet,
+	PanResponder,
+	Text,
 	ImageBackground,
-	Image,
 	TouchableOpacity,
-	Animated,
-	PanResponder
+	Image,
 } from 'react-native';
 
-type Props = {};
+type CircleStyles = {
+	left?: number,
+	top?: number,
+};
+
+const CIRCLE_WIDTH = 92;
+const CIRCLE_HEIGHT = 113;
+const CIRCLE_WRAPPER_WIDTH = 434;
+const CIRCLE_WRAPPER_HEIGHT = 434;
+
+type Props = $ReadOnly<{||}>;
+
 export default class App extends Component<Props> {
 	constructor(props) {
 		super(props);
-
 		this.state = {
-			pan: new Animated.ValueXY(),
-			scale: new Animated.Value(1)
+			cx: CIRCLE_WRAPPER_WIDTH / 2,
+			cy: CIRCLE_WRAPPER_WIDTH / 2,
+			prev_cx: CIRCLE_WRAPPER_WIDTH / 2,
+			prev_cy: CIRCLE_WRAPPER_WIDTH / 2,
+			r: (CIRCLE_WRAPPER_WIDTH / 2),
+			temperature_value_angle: '0deg',
+			prev_temperature_value_angle: '0deg',
+			temperature_value: 25,
+			temperature_value_color: 'rgb(0,0,0)'
+		}
+	}
+
+	_handleStartShouldSetPanResponder = (): boolean => {
+		return true;
+	};
+	_handleMoveShouldSetPanResponder = (): boolean => {
+		return true;
+	};
+
+	_handlePanResponderMove = (event: PressEvent, gestureState: GestureState) => {
+
+		this._circleStyles.style.left = this._previousLeft + gestureState.dx;
+		this._circleStyles.style.top = this._previousTop + gestureState.dy;
+
+		this._realLeft = this._previousLeft + gestureState.dx;
+		this._realTop = this._previousTop + gestureState.dy;
+
+		const {x, y} = this.cartesianToPolar(this._realLeft, this._realTop);
+
+		this._circleStyles.style.left = (x - CIRCLE_WIDTH / 2);
+		this._circleStyles.style.top = (y - CIRCLE_WIDTH / 2) + 10;
+
+		this._updateNativeStyles();
+	};
+
+	_handlePanResponderEnd = (event: PressEvent, gestureState: GestureState) => {
+		this._previousLeft += gestureState.dx;
+		this._previousTop += gestureState.dy;
+	};
+
+	_panResponder: PanResponderInstance = PanResponder.create({
+		onStartShouldSetPanResponder: this._handleStartShouldSetPanResponder,
+		onMoveShouldSetPanResponder: this._handleMoveShouldSetPanResponder,
+		onPanResponderGrant: this._handlePanResponderGrant,
+		onPanResponderMove: this._handlePanResponderMove,
+		onPanResponderRelease: this._handlePanResponderEnd,
+		onPanResponderTerminate: this._handlePanResponderEnd,
+	});
+
+	_previousLeft: number = 0;
+	_previousTop: number = 0;
+	_realLeft: number = 0;
+	_realTop: number = 0;
+	_circleStyles: {| style: CircleStyles |} = {style: {}};
+	circle: ?React.ElementRef<typeof Image> = null;
+
+	polarToCartesian(angle) {
+		let {cx, cy, r} = this.state
+			, a = (angle - 270) * Math.PI / 180.0
+			, x = cx + (r * Math.cos(a))
+			, y = cy + (r * Math.sin(a))
+			, temperature_angle = (angle - 180) + 'deg';
+		if (angle > 45 && angle < 315) {
+			let cof = 5.3;
+			let temperature_value_color = 'rgb(' + (angle * 0.701) + ',0,' + (255 - angle * 0.701) + ')';
+
+			let temperature_value = ((angle - 180) / cof) + 25;
+			if (temperature_value < 0) temperature_value = 0;
+			if (temperature_value > 50) temperature_value = 50;
+			this.setState({
+				prev_cx: x,
+				prev_cy: y,
+				prev_temperature_value_angle: temperature_angle,
+				temperature_value_angle: temperature_angle,
+				temperature_value: Math.round(temperature_value),
+				temperature_value_color: temperature_value_color
+			});
+		} else {
+			x = this.state.prev_cx;
+			y = this.state.prev_cy;
+			this.setState({
+				temperature_value_angle: this.state.prev_temperature_value_angle
+			});
+		}
+
+		return {angle, temperature_angle, x, y}
+	}
+
+	cartesianToPolar(x, y) {
+		const {cx, cy} = this.state;
+		let angle = Math.round((Math.atan((y - cy) / (x - cx))) / (Math.PI / 180) + ((x > cx) ? 270 : 90));
+
+		return (this.polarToCartesian(angle));
+	}
+
+	UNSAFE_componentWillMount() {
+		this._previousLeft = (CIRCLE_WRAPPER_WIDTH / 2) - (CIRCLE_WIDTH / 2);
+		this._previousTop = -30;
+		this._circleStyles = {
+			style: {
+				left: this._previousLeft,
+				top: this._previousTop,
+			},
 		};
 	}
 
-	componentWillMount() {
-
-		this._panResponder = PanResponder.create({
-
-			onMoveShouldSetResponderCapture: () => true,
-			onMoveShouldSetPanResponderCapture: () => true,
-
-			onPanResponderGrant: (e, gestureState) => {
-				// Set the initial value to the current state
-
-				this.state.pan.setOffset({x: this.state.pan.x._value, y: this.state.pan.y._value});
-				this.state.pan.setValue({x: 0, y: 0});
-
-				Animated.spring(
-					this.state.scale,
-					{ toValue: 1.1, friction: 3 }
-				).start();
-			},
-
-			onPanResponderMove: (evt, gestureState) => {
-				//this.setState({pan.x: 1});
-				return Animated.event([null, {
-					dx: this.state.pan.x,
-					dy: this.state.pan.y,
-				}])(evt, gestureState)
-			},
-
-			onPanResponderRelease: (e, {vx, vy}) => {
-				// Flatten the offset to avoid erratic behavior
-				this.state.pan.flattenOffset();
-				Animated.spring(
-					this.state.scale,
-					{ toValue: 1, friction: 3 }
-				).start();
-			}
-		});
+	componentDidMount() {
+		this._updateNativeStyles();
 	}
 
+	_updateNativeStyles() {
+		this.circle && this.circle.setNativeProps(this._circleStyles);
+	}
 
 	render() {
-		// Destructure the value of pan from the state
-		let { pan, scale } = this.state;
-		// Calculate the x and y transform from the pan value
-		let [translateX, translateY] = [pan.x, pan.y];
-		let rotate = '0deg';
-		let CIRCLE_RADIUS = 210;
-		// Calculate the transform property and set it as a value for our style which we add below to the Animated.View component
-		let imageStyle = {transform: [{translateX}, {translateY}, {rotate}, {scale}]};
-
 		return (
 			<View style={styles.container}>
 				<ImageBackground
@@ -109,22 +181,29 @@ export default class App extends Component<Props> {
 							</TouchableOpacity>
 						</View>
 					</View>
-					<View style={styles.temperatureWrapper}>
-						<ImageBackground
-							source={require('./assets/temperature_bg.png')}
-							style={styles.bgTemperature}
-						>
-							<Animated.View style={imageStyle} {...this._panResponder.panHandlers}>
-								<Image
-									style={styles.temperatureDrag}
-									source={require('./assets/temperature-drag.png')}
-								/>
-							</Animated.View>
 
-						</ImageBackground>
-						<Text style={styles.temperatureValue}>25°</Text>
-						<Text style={styles.temperatureType}>Kitchen</Text>
-					</View>
+						<View style={styles.temperatureWrapper}>
+							<ImageBackground
+								source={require('./assets/temperature_bg.png')}
+								style={styles.bgTemperature}
+							>
+								<View
+									ref={circle => {
+										this.circle = circle;
+									}}
+									style={styles.temperatureDragWrapper}
+									{...this._panResponder.panHandlers}
+								>
+									<Image
+										style={[styles.temperatureDrag, {transform: [{rotate: this.state.temperature_value_angle}]}]}
+										source={require('./assets/temperature-drag.png')}
+									/>
+								</View>
+
+							</ImageBackground>
+							<Text style={[styles.temperatureValue, {color: this.state.temperature_value_color}]}>{this.state.temperature_value}°</Text>
+							<Text style={styles.temperatureType}>Kitchen</Text>
+						</View>
 				</View>
 				<TouchableOpacity style={styles.buttonPlus}>
 					<Image
@@ -143,7 +222,7 @@ const styles = StyleSheet.create({
 		backgroundColor: '#f7f7f7',
 	},
 	content: {
-		flex:1,
+		flex: 1,
 		marginBottom: 28,
 		marginHorizontal: 28,
 		backgroundColor: '#fff',
@@ -151,7 +230,7 @@ const styles = StyleSheet.create({
 		paddingHorizontal: 36,
 		paddingVertical: 40,
 		shadowColor: 'rgba(0, 0, 0, 0.04)',
-		shadowOffset: { width: 0, height: 0 },
+		shadowOffset: {width: 0, height: 0},
 		shadowRadius: 30,
 	},
 	navigationWrapper: {
@@ -167,13 +246,13 @@ const styles = StyleSheet.create({
 		flexDirection: 'row',
 		alignItems: 'center',
 	},
-	navigationTime:{
+	navigationTime: {
 		color: '#ffffff',
 		fontFamily: 'Roboto Light',
 		fontSize: 30,
 		fontWeight: '300',
 	},
-	navigationDate:{
+	navigationDate: {
 		color: '#ffffff',
 		fontFamily: 'Roboto Light',
 		fontSize: 18,
@@ -209,10 +288,10 @@ const styles = StyleSheet.create({
 		justifyContent: 'space-between',
 		flexDirection: 'row'
 	},
-	breadcrumbs:{
+	breadcrumbs: {
 		alignItems: 'center',
 		flexDirection: 'row',
-		marginBottom: 51
+		marginBottom: 80
 	},
 	breadcrumbHome: {
 		width: 42,
@@ -233,11 +312,11 @@ const styles = StyleSheet.create({
 		width: 56,
 		height: 56,
 		shadowColor: 'rgba(0, 0, 0, 0.12)',
-		shadowOffset: { width: 4, height: 0 },
+		shadowOffset: {width: 4, height: 0},
 		shadowRadius: 10,
 		backgroundColor: '#5fb8c1',
 		borderRadius: 56,
-		position:'absolute',
+		position: 'absolute',
 		bottom: 16,
 		right: 16,
 		alignItems: 'center',
@@ -252,15 +331,14 @@ const styles = StyleSheet.create({
 		justifyContent: 'center',
 	},
 	bgTemperature: {
-		width: 613,
-		height: 489,
+		width: 434,
+		height: 434,
 		position: 'relative',
 		alignItems: 'center',
 		justifyContent: 'flex-start',
-		paddingTop: 30
+		//paddingTop: 30
 	},
 	temperatureValue: {
-		color: '#343434',
 		fontFamily: 'Roboto',
 		fontSize: 48,
 		fontWeight: '400',
@@ -279,10 +357,14 @@ const styles = StyleSheet.create({
 		width: 92,
 		height: 113,
 	},
-	slider1: {
+	temperatureDragWrapper: {
+		width: 92,
+		height: 113,
 		position: 'absolute',
+		left: 0,
 		top: 0,
-		left: 0
 	},
 
 });
+
+module.exports = App;
